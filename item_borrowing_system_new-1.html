@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Item Borrowing System</title>
+<style>
+body{font-family:Arial;margin:0;background:#f3f6fb;color:#222}
+header{background:#2563eb;color:white;padding:22px}
+.container{max-width:1100px;margin:20px auto;padding:15px}
+.card{background:white;padding:20px;border-radius:12px;margin-bottom:20px;box-shadow:0 3px 12px #0001}
+.stats{display:flex;gap:15px;flex-wrap:wrap}
+.stat{flex:1;min-width:180px;background:white;padding:18px;border-radius:12px}
+.stat b{display:block;font-size:28px;margin-top:8px}
+form{display:flex;gap:10px;flex-wrap:wrap}
+input,button{padding:11px;border-radius:7px;border:1px solid #ccc}
+button{background:#2563eb;color:white;border:0;cursor:pointer}
+.return{background:#16a34a}.delete{background:#dc2626}
+table{width:100%;border-collapse:collapse}
+th,td{padding:11px;border-bottom:1px solid #ddd;text-align:left}
+.badge{padding:5px 8px;border-radius:15px;font-size:12px}
+.available{background:#dcfce7;color:#166534}.borrowed{background:#fee2e2;color:#991b1b}
+@media(max-width:700px){form{display:block}form input,form button{width:100%;margin-bottom:8px}.stats{display:block}.stat{margin-bottom:10px}}
+</style>
+</head>
+<body>
+
+<header>
+<h1>📦 Item Inventory & Borrowing System</h1>
+<p>Manage items and borrowing records.</p>
+</header>
+
+<div class="container">
+
+<div class="stats">
+<div class="stat">Total Items<b id="total">0</b></div>
+<div class="stat">Available<b id="available">0</b></div>
+<div class="stat">Borrowed<b id="borrowed">0</b></div>
+</div>
+
+<div class="card">
+<h2>➕ Add Item</h2>
+<form id="addForm">
+<input id="name" placeholder="Item name" required>
+<input id="category" placeholder="Category" required>
+<input id="qty" type="number" min="1" placeholder="Quantity" required>
+<button>Add Item</button>
+</form>
+</div>
+
+<div class="card">
+<h2>📋 Item List</h2>
+<input id="search" placeholder="Search item..." style="width:100%;margin-bottom:12px">
+
+<table>
+<thead>
+<tr>
+<th>Item</th><th>Category</th><th>Total</th><th>Available</th><th>Status</th><th>Action</th>
+</tr>
+</thead>
+<tbody id="items"></tbody>
+</table>
+</div>
+
+<div class="card">
+<h2>📝 Borrowing Records</h2>
+<table>
+<thead>
+<tr>
+<th>Borrower</th><th>Item</th><th>Quantity</th><th>Borrow Date</th><th>Due Date</th><th>Status</th>
+</tr>
+</thead>
+<tbody id="records"></tbody>
+</table>
+</div>
+
+</div>
+
+<script>
+let inventory=JSON.parse(localStorage.getItem("inventory")||"[]");
+let records=JSON.parse(localStorage.getItem("records")||"[]");
+
+function save(){
+localStorage.setItem("inventory",JSON.stringify(inventory));
+localStorage.setItem("records",JSON.stringify(records));
+}
+
+function safe(x){
+return String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
+}
+
+function display(){
+let search=document.getElementById("search").value.toLowerCase();
+
+let list=inventory.filter(x=>
+x.name.toLowerCase().includes(search)||
+x.category.toLowerCase().includes(search)
+);
+
+document.getElementById("items").innerHTML=list.length?list.map(x=>`
+<tr>
+<td>${safe(x.name)}</td>
+<td>${safe(x.category)}</td>
+<td>${x.total}</td>
+<td>${x.available}</td>
+<td><span class="badge ${x.available?"available":"borrowed"}">${x.available?"Available":"Borrowed"}</span></td>
+<td>
+<button onclick="borrow('${x.id}')">Borrow</button>
+<button class="return" onclick="returnItem('${x.id}')">Return</button>
+<button class="delete" onclick="removeItem('${x.id}')">Delete</button>
+</td>
+</tr>`).join(""):`<tr><td colspan="6">No items found.</td></tr>`;
+
+document.getElementById("records").innerHTML=records.length?records.slice().reverse().map(r=>`
+<tr>
+<td>${safe(r.borrower)}</td>
+<td>${safe(r.item)}</td>
+<td>${r.quantity}</td>
+<td>${safe(r.borrowDate)}</td>
+<td>${safe(r.dueDate)}</td>
+<td><span class="badge ${r.status==="Borrowed"?"borrowed":"available"}">${r.status}</span></td>
+</tr>`).join(""):`<tr><td colspan="6">No borrowing records yet.</td></tr>`;
+
+document.getElementById("total").textContent=
+inventory.reduce((s,x)=>s+x.total,0);
+
+document.getElementById("available").textContent=
+inventory.reduce((s,x)=>s+x.available,0);
+
+document.getElementById("borrowed").textContent=
+inventory.reduce((s,x)=>s+(x.total-x.available),0);
+}
+
+document.getElementById("addForm").addEventListener("submit",function(e){
+e.preventDefault();
+
+let name=document.getElementById("name").value.trim();
+let category=document.getElementById("category").value.trim();
+let qty=Number(document.getElementById("qty").value);
+
+let existing=inventory.find(x=>x.name.toLowerCase()===name.toLowerCase());
+
+if(existing){
+existing.total+=qty;
+existing.available+=qty;
+}else{
+inventory.push({
+id:crypto.randomUUID(),
+name:name,
+category:category,
+total:qty,
+available:qty
+});
+}
+
+save();
+this.reset();
+display();
+});
+
+function borrow(id){
+let item=inventory.find(x=>x.id===id);
+
+if(!item||item.available<1){
+alert("No available item.");
+return;
+}
+
+let borrower=prompt("Enter borrower's name:");
+if(!borrower)return;
+
+let quantity=Number(prompt("How many will be borrowed?","1"));
+
+if(!Number.isInteger(quantity)||quantity<1||quantity>item.available){
+alert("Invalid quantity.");
+return;
+}
+
+let dueDate=prompt("Enter due date (Example: 2026-10-15):");
+if(!dueDate)return;
+
+item.available-=quantity;
+
+records.push({
+borrower:borrower.trim(),
+item:item.name,
+quantity:quantity,
+borrowDate:new Date().toLocaleString(),
+dueDate:dueDate.trim(),
+status:"Borrowed"
+});
+
+save();
+display();
+
+alert("Item successfully borrowed!");
+}
+
+function returnItem(id){
+let item=inventory.find(x=>x.id===id);
+
+if(!item||item.available===item.total){
+alert("No borrowed item to return.");
+return;
+}
+
+let quantity=Number(prompt("How many will be returned?","1"));
+let borrowed=item.total-item.available;
+
+if(!Number.isInteger(quantity)||quantity<1||quantity>borrowed){
+alert("Invalid quantity.");
+return;
+}
+
+item.available+=quantity;
+
+records.push({
+borrower:"—",
+item:item.name,
+quantity:quantity,
+borrowDate:new Date().toLocaleString(),
+dueDate:"—",
+status:"Returned"
+});
+
+save();
+display();
+}
+
+function removeItem(id){
+let item=inventory.find(x=>x.id===id);
+
+if(item.available!==item.total){
+alert("Cannot delete an item while it is borrowed.");
+return;
+}
+
+if(confirm("Delete "+item.name+"?")){
+inventory=inventory.filter(x=>x.id!==id);
+save();
+display();
+}
+}
+
+document.getElementById("search").addEventListener("input",display);
+display();
+</script>
+
+</body>
+</html>
